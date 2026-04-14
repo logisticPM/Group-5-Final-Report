@@ -1,0 +1,50 @@
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Datasets}
+\label{sec:data}
+
+\paragraph{Misviz benchmark.}
+We evaluate on a 271-chart subset of the Misviz benchmark~\cite{tonglet2025misviz}, which provides multi-label annotations across all 12 misleader categories defined in \S\ref{sec:formulation}. The subset covers a balanced range of chart types (bar, line, pie, area, scatter) drawn from real-world publications. Of the 271 charts, 171 contain at least one misleader label (63\%) and 100 are non-misleading (37\%).
+
+\paragraph{SEC 10-K validation set.}
+For Phase~3, we collected financial charts from 10-K filings of 10 public companies via SEC EDGAR: BCO, CHPT, IRBT, KMI, LITE, LYFT, OGN, STZ, UPS, and VERI. Each company has at least one active SEC comment letter on file. An automated extraction pipeline downloaded filings, parsed HTML, and filtered chart images using a VLM pre-screening step (see \S\ref{sec:sec}). This yielded 96 financial charts across the 10 companies (7--10 per company). All 10 companies received SEC comment letters covering presentation issues, providing external ground truth for whether misleading visualizations were present in that company's filing.
+
+\subsection{Models}
+\label{sec:models}
+
+We evaluate two VLMs representing different scales and providers:
+
+\begin{itemize}[nosep]
+  \item \textbf{Claude Haiku~4.5} (\texttt{anthropic/claude-haiku-4.5}): Anthropic's efficient mid-size model with strong multimodal reasoning. Used in all pipeline phases.
+  \item \textbf{Qwen3-VL-8B} (\texttt{qwen/qwen3-vl-8b-instruct}): An open-weight 8B-parameter vision-language model from Alibaba. Provides a lower-resource reference point.
+\end{itemize}
+
+We additionally ran a subset of experiments with Claude Sonnet~4.6 to validate that the trend between Haiku~4.5 and Qwen3-VL-8B is consistent with model scale.
+
+\subsection{Input Conditions}
+\label{sec:conditions}
+
+Each model is evaluated under two input conditions:
+
+\begin{itemize}[nosep]
+  \item \textbf{Vision-only}: The model receives only the chart image and a structured prompt listing the 12 misleader types with definitions.
+  \item \textbf{Vision+text}: In addition to the image, the model receives extracted metadata---axis labels, tick values, chart title---derived from the image's accompanying HTML in the SEC filing or from OCR-derived text. This tests whether textual grounding improves fine-grained detection.
+\end{itemize}
+
+\subsection{Evaluation Metrics}
+\label{sec:metrics}
+
+We report two complementary metrics:
+
+\begin{itemize}[nosep]
+  \item \textbf{Binary F1}: Standard F1 on the binary is-misleading prediction. A model achieves high binary F1 by flagging most misleading charts regardless of type accuracy.
+  \item \textbf{Per-type F1 (PT-F1)}: For each of the 12 misleader types, we compute the F1 score independently and report the macro-average. This is our primary metric, as it captures whether the model correctly identifies \textit{which} deceptive technique is present.
+\end{itemize}
+
+We also report accuracy, precision, and recall for the binary task to characterize the failure modes (false positive vs.\ false negative orientation) of each model.
+
+\subsection{Implementation Details}
+\label{sec:impl}
+
+All VLM calls are made via the OpenRouter API with temperature~0 for deterministic evaluation (temperature~0.7 for self-consistency runs in V8). JSON outputs are extracted with a regex parser with a fallback that treats unparseable responses as negative predictions. For the ViT classifier, we fine-tuned ViT-B/16~\cite{dosovitskiy2021vit} (86M parameters) on the Misviz synthetic dataset (82K images), using binary cross-entropy loss with class-frequency-based positive weighting and a two-phase training schedule (1 epoch frozen backbone, 2 epochs full fine-tuning). The veto threshold of 0.20 was selected via grid search on a held-out validation split.

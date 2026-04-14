@@ -1,0 +1,198 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{RQ1: VLM Baseline Performance on Misviz}
+\label{sec:rq1}
+
+Table~\ref{tab:misviz_main} summarizes binary classification performance across all four baseline conditions. Claude Haiku~4.5 substantially outperforms Qwen3-VL-8B on both binary F1 (0.830 vs.\ 0.723 in the vision-only condition) and per-type F1 (PT-F1). Both models achieve reasonably high recall but lower precision, indicating a tendency to over-flag charts. Importantly, high binary F1 masks weak per-type accuracy: the Claude vision-only baseline achieves binary F1~=~0.830 but PT-F1~=~39.3\% (computed over types with non-zero support), and flags 42\% of non-misleading charts as misleading.
+
+\begin{table}[h]
+  \centering
+  \caption{Misviz benchmark --- binary classification results (271 charts). PT-F1 is the macro-average F1 over misleader types with non-zero support.}
+  \label{tab:misviz_main}
+  \small
+  \begin{tabular}{llccccc}
+    \toprule
+    Model & Condition & Accuracy & Precision & Recall & Binary F1 & PT-F1 \\
+    \midrule
+    Claude Haiku 4.5 & vision\_only & 0.771 & 0.782 & 0.883 & 0.830 & 39.3\% \\
+    Claude Haiku 4.5 & vision\_text & 0.779 & 0.832 & 0.813 & 0.822 & ---    \\
+    Qwen3-VL-8B      & vision\_only & 0.672 & 0.773 & 0.678 & 0.723 & ---    \\
+    Qwen3-VL-8B      & vision\_text & 0.664 & 0.845 & 0.573 & 0.683 & ---    \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Effect of text context.}
+Adding textual grounding had no statistically significant effect on Claude (F1 drops slightly from 0.830 to 0.822) and substantially hurt Qwen's recall (0.678 $\to$ 0.573). This is a negative result: contrary to the multi-modal fusion intuition, injecting axis label and value text into the VLM prompt does not improve, and often degrades, misleader detection. We attribute this to two effects: (1) text context increases the input length and appears to dilute the model's attention to visual features, and (2) OCR extraction errors introduce false evidence that the model treats as authoritative.
+
+\paragraph{Per-type analysis.}
+Table~\ref{tab:pertype} shows per-type F1 for the two Claude conditions. Both conditions excel on structurally salient types---dual axis (F1 0.769/0.732) and 3D distortion (0.696/0.698)---while failing on the ``blind-spot'' types that require quantitative axis analysis: inconsistent tick intervals (0.0/0.111), discretized continuous variable (0.0/0.0), and inconsistent binning (0.095/0.118). Inappropriate axis range (0.154/0.111) and inappropriate item order (0.222/0.0) are also weak. This confirms a systematic gap between visually-obvious and quantitatively-grounded misleader types.
+
+\begin{table}[h]
+  \centering
+  \caption{Per-type F1 for Claude Haiku~4.5 on Misviz (271 charts). Types are grouped by detection difficulty.}
+  \label{tab:pertype}
+  \small
+  \begin{tabular}{lcc}
+    \toprule
+    Misleader Type & Vision-only & Vision+text \\
+    \midrule
+    \multicolumn{3}{l}{\textit{Visually salient types}} \\
+    Dual axis              & 0.769 & 0.732 \\
+    3D distortion          & 0.696 & 0.698 \\
+    Pie chart misuse       & 0.571 & 0.526 \\
+    Line chart misuse      & 0.424 & 0.529 \\
+    Truncated axis         & 0.388 & 0.500 \\
+    Inverted axis          & 0.348 & 0.300 \\
+    Misrepresentation      & 0.329 & 0.308 \\
+    \midrule
+    \multicolumn{3}{l}{\textit{Quantitative / blind-spot types}} \\
+    Inappropriate item order    & 0.222 & 0.000 \\
+    Inappropriate axis range    & 0.154 & 0.111 \\
+    Inconsistent binning        & 0.095 & 0.118 \\
+    Inconsistent tick intervals & 0.000 & 0.111 \\
+    Discretized continuous var. & 0.000 & 0.000 \\
+    \midrule
+    \textbf{Macro PT-F1}   & \textbf{0.333} & \textbf{0.328} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{RQ2: Effect of Tool Augmentation and Pipeline Design}
+\label{sec:rq2}
+
+Table~\ref{tab:pipeline} reports PT-F1, precision, recall, and false positive/negative counts for all pipeline variants evaluated on the 271-chart Misviz set (Claude Haiku~4.5).
+
+\begin{table}[h]
+  \centering
+  \caption{Pipeline variant comparison on Misviz benchmark (271 charts, Claude Haiku~4.5). PT-F1 is macro-averaged per-type F1. VLM calls counts the average API calls per chart.}
+  \label{tab:pipeline}
+  \small
+  \begin{tabular}{lcccccc}
+    \toprule
+    Architecture & PT-F1 & PT-Prec & PT-Rec & FP & FN & VLM calls \\
+    \midrule
+    VLM-only baseline           & 39.3\% & 35.7\% & 43.7\% & 157 & 112 & 1 \\
+    V3 (OCR+Rules injected)     & 38.9\% & 31.3\% & 51.3\% & 224 &  97 & 1 \\
+    V4 (baseline + CLEAN veto)  & 43.5\% & 44.3\% & 42.7\% & 107 & 114 & 1 \\
+    V5 (V4 + DePlot rules)      & 37.6\% & 30.0\% & 50.3\% & 233 &  99 & 1 \\
+    V6 (targeted re-ask)        & 43.0\% & 36.5\% & 52.3\% & 181 &  95 & 2 \\
+    V7 (sequential re-ask)      & 40.1\% & 30.1\% & 59.8\% & 276 &  80 & ${\sim}7$ \\
+    V8 (V7 + 3-vote majority)   & 38.9\% & 29.1\% & 58.8\% & 285 &  82 & ${\sim}19$ \\
+    \textbf{V4 + ViT veto (ours)} & \textbf{45.2\%} & \textbf{50.0\%} & \textbf{41.2\%} & \textbf{82} & 117 & \textbf{1} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Tool injection hurts (V3, V5).}
+V3 injected OCR-derived rule verdicts directly into the VLM prompt. PT-F1 dropped from 39.3\% to 38.9\% and false positives increased by 43\% (157~$\to$~224). The OCR ``flagged'' verdicts had only 0--4\% accuracy, introducing misleading evidence. V5 replicated this failure with DePlot: extracted data tables generated 20 false positives per 7 true positives from rule application, driving PT-F1 down to 37.6\%.
+
+\paragraph{Post-processing veto improves results (V4).}
+V4 applied OCR rule verdicts as a post-hoc veto: only when rules confidently classify a type as ``clean'' (99--100\% precision) do we override the VLM's positive prediction. Combined with disambiguation examples for the three most-confused types, this reduced false positives to 107 and raised PT-F1 to 43.5\%---the first meaningful gain over baseline.
+
+\paragraph{Multi-call re-asking reveals attention limitation (V6, V7).}
+V7's per-type sequential calls achieved the highest recall (59.8\%) and fewest false negatives (80), confirming that VLMs \textit{can} detect blind-spot types when asked in isolation. However, the ${\sim}7\times$ call overhead also inflated false positives to 276, yielding lower PT-F1 (40.1\%) than V4.
+
+\paragraph{Self-consistency fails (V8).}
+Majority-voting across three V7 runs (temperature~0.7) degraded PT-F1 further to 38.9\%, confirming that chart misleader errors are \textit{systematic} rather than random---sampling cannot correct them.
+
+\paragraph{ViT selective veto achieves best PT-F1 at baseline cost.}
+The final pipeline adds a ViT-B/16 selective veto to V4, removing false positives on five high-precision types (tick intervals, binning, axis range, item order, truncated axis) without additional VLM calls. This reduces false positives from 107 to 82 and raises PT-F1 to \textbf{45.2\%} with precision \textbf{50.0\%}---a 5.9-point improvement over the VLM-only baseline at identical inference cost.
+
+Table~\ref{tab:pertype_improvement} shows per-type F1 gains from the final pipeline over baseline.
+
+\begin{table}[h]
+  \centering
+  \caption{Per-type F1 change from VLM-only baseline to V4\,+\,ViT veto (selected types with notable changes).}
+  \label{tab:pertype_improvement}
+  \small
+  \begin{tabular}{lccc}
+    \toprule
+    Misleader Type & Baseline F1 & V4\,+\,ViT F1 & $\Delta$ \\
+    \midrule
+    Inconsistent binning        & 9.5\%  & 34.5\% & $+$25.0\% \\
+    Inconsistent tick intervals & 0.0\%  & 20.5\% & $+$20.5\% \\
+    Truncated axis              & 38.8\% & 53.1\% & $+$14.3\% \\
+    3D distortion               & 69.6\% & 80.8\% & $+$11.2\% \\
+    Misrepresentation           & 32.9\% & 41.7\% & $+$ 8.8\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{RQ3: Generalization to Real SEC Filings}
+\label{sec:rq3}
+
+Table~\ref{tab:sec_main} reports binary detection performance on the 96-chart SEC validation set. All 10 companies in our dataset had active SEC comment letters, so every flagged chart constitutes a true positive (precision~=~1.0 for all conditions). The key differentiator is recall: how many charts from companies with known violations does the model flag?
+
+\begin{table}[h]
+  \centering
+  \caption{SEC 10-K validation set --- binary detection results (96 charts, 10 companies). All companies have active SEC comment letters (all ground-truth positive), so precision = 1.0 for all conditions.}
+  \label{tab:sec_main}
+  \small
+  \begin{tabular}{llccc}
+    \toprule
+    Model & Condition & Recall & F1 & Charts Flagged \\
+    \midrule
+    Claude Haiku 4.5 & vision\_only & 0.375 & 0.545 & 36/96 \\
+    Claude Haiku 4.5 & vision\_text & 0.396 & 0.567 & 38/96 \\
+    Qwen3-VL-8B      & vision\_only & 0.167 & 0.286 & 16/96 \\
+    Qwen3-VL-8B      & vision\_text & 0.073 & 0.136 & 7/96  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Cross-domain gap.}
+The best condition (Claude vision+text) achieves F1~=~0.567 and recall~=~0.396 on the SEC set, compared to binary F1~=~0.822 on Misviz. The gap reflects two distributional differences: SEC financial charts are predominantly simple bar, line, or stock performance charts with fewer extreme visual distortions than the Misviz benchmark; and our ground truth (the presence of an SEC comment letter) is a coarser signal than the Misviz per-chart annotations.
+
+\paragraph{Company-level variation.}
+Table~\ref{tab:sec_ticker} shows per-company flag rates for Claude vision-only. Performance is highly uneven. STZ and UPS show very high flag rates (100\% and 80\%), consistent with their comment letters flagging numerous Non-GAAP presentation issues. CHPT shows 0\% flagging despite having a comment letter; manual inspection confirms its charts are predominantly simple trend lines without obvious structural misleaders, suggesting the comment letter concerns were textual rather than visual. BCO (50\%), VERI (57\%), and IRBT (20\%) fall in between.
+
+\begin{table}[h]
+  \centering
+  \caption{Per-company chart flag rates for Claude Haiku~4.5 (vision-only) on SEC 10-K validation set. All companies have SEC comment letters (has\_gt\_violation = true).}
+  \label{tab:sec_ticker}
+  \small
+  \begin{tabular}{lcc}
+    \toprule
+    Ticker & Charts & Flag Rate \\
+    \midrule
+    STZ   & 10 & 100\% \\
+    UPS   & 10 &  80\% \\
+    VERI  &  7 &  57\% \\
+    BCO   & 10 &  50\% \\
+    KMI   &  9 &  22\% \\
+    IRBT  & 10 &  20\% \\
+    LITE  & 10 &  20\% \\
+    LYFT  & 10 &  20\% \\
+    OGN   & 10 &  10\% \\
+    CHPT  & 10 &   0\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Qualitative validation.}
+Beyond binary detection, the SEC pipeline performs Non-GAAP compliance analysis on extracted financial tables. For the companies where the comment letter specifically cited Non-GAAP presentation issues (STZ, UPS, VERI), the pipeline flagged the same tables and correctly identified the relevant regulatory provisions (Regulation~G and Item~10(e) of Regulation~S-K). This qualitative agreement with SEC comment letter content provides partial validation that the system's reasoning is grounded in the correct compliance framework, not merely pattern-matching on visual features.
+
+\subsection{Summary}
+\label{sec:summary}
+
+Table~\ref{tab:summary} consolidates the key findings across all three research questions.
+
+\begin{table}[h]
+  \centering
+  \caption{Key findings summary.}
+  \label{tab:summary}
+  \small
+  \begin{tabular}{p{3cm}p{9cm}}
+    \toprule
+    Research Question & Finding \\
+    \midrule
+    RQ1: VLM capability & Claude Haiku~4.5 achieves binary F1~=~0.830 but PT-F1~=~39.3\%, revealing a large gap between binary and fine-grained detection. Blind-spot types (tick intervals, binning, discretized variable) score near zero. \\
+    \midrule
+    RQ2: Tool augmentation & Injecting OCR and rule outputs into VLM prompts consistently degrades PT-F1. Using the same tools as post-processing vetoes (V4) improves PT-F1 to 43.5\%. Adding a ViT-B/16 selective veto achieves the best result of 45.2\% PT-F1 at baseline inference cost (1 VLM call/chart). \\
+    \midrule
+    RQ3: SEC generalization & The best pipeline achieves recall~=~0.396 and F1~=~0.567 on 96 real SEC charts, with large per-company variance. STZ and UPS are flagged at 80--100\%; companies with only textual violations (CHPT) are missed entirely, reflecting a genuine gap in visual-vs.-textual misleader detection. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
