@@ -1,0 +1,72 @@
+\section{Literature Review}
+
+\subsection{Chart Understanding with Vision-Language Models}
+
+A growing body of work has explored how Vision-Language Models can be
+applied to chart understanding. ChartQA \cite{masry2022chartqa}
+introduces a benchmark where models are required to answer questions
+about charts, combining visual perception with logical reasoning.
+DePlot \cite{liu2023deplot} takes a different approach by converting
+chart images into structured tables, which can then be used for
+numerical reasoning. More recently, UniChart \cite{masry2023unichart}
+proposes a unified framework for chart-related tasks through
+pretraining. Together, these studies suggest that VLMs are effective at
+extracting information from charts and performing reasoning tasks.
+However, the focus of this line of work is on understanding what a
+chart shows, rather than evaluating whether the chart itself may be
+misleading. Detecting misleading patterns requires a fundamentally
+different perspective, one that considers how visual encoding choices
+may distort the underlying data rather than simply interpreting what is
+presented. Our work addresses this gap by treating chart analysis as an
+auditing task rather than a comprehension task.
+
+\subsection{Misleading Visualization Detection}
+
+Misleading visualizations have traditionally been studied from the
+perspective of human perception and design principles.
+\citet{pandey2015deceptive} demonstrate that truncated axes can
+significantly affect how differences are perceived, while
+\citet{lisnic2023misleading} provide a broader taxonomy of misleading
+techniques observed in real-world media. The Misviz benchmark
+\cite{tonglet2025misviz} represents the first large-scale effort to
+formalize this problem for machine learning, providing charts annotated
+across 12 misleader types. However, existing evaluations have focused
+primarily on binary detection, leaving per-type detection ability
+largely unexplored. No prior automated system has been shown to
+reliably identify specific misleader types, particularly in realistic
+financial contexts. Our work directly addresses this gap by evaluating
+and improving per-type detection performance as the primary metric.
+
+\subsection{Tool-Augmented Language Models}
+
+Tool-augmented language models have shown strong performance across a
+range of reasoning tasks. Toolformer \cite{schick2023toolformer}
+demonstrates that models can learn to invoke external tools to improve
+task performance, while ReAct \cite{yao2023react} combines step-by-step
+reasoning with tool usage in an interleaved process. ViperGPT
+\cite{suris2023vipergpt} extends this idea to visual reasoning by
+enabling models to execute programmatically generated code. While these
+approaches have proven effective in text-based and programmatic
+settings, their applicability to chart visual reasoning is not well
+understood. Adding external information such as OCR outputs to a visual
+prompt may not always help and can sometimes interfere with the model's
+visual attention. Whether and how tool augmentation should be integrated
+into chart analysis pipelines remains an open question that our work
+directly investigates.
+
+\subsection{SEC Financial Disclosure Analysis}
+
+In the financial domain, prior research has focused predominantly on
+textual and numerical analysis. FinQA \cite{chen2021finqa} introduces a
+dataset for numerical reasoning over financial documents, and
+\citet{black2021nongaap} study the consistency and comparability of
+non-GAAP earnings disclosures, highlighting ongoing regulatory
+concerns. However, these studies largely overlook visual elements such
+as charts, despite their widespread use in financial filings. No prior
+work has examined chart-level compliance with SEC regulations such as
+Regulation~G or Item~10(e) of Regulation~S-K in an automated way. Our
+work addresses this gap by extending VLM-based chart analysis to real
+SEC 10-K filings and validating findings against actual regulatory
+comment letters.
+
+% ============================================================

@@ -1,0 +1,144 @@
+\section{Methodology}
+\label{sec:methodology}
+
+Our goal is to detect specific misleader types in financial charts, going beyond binary (misleading/not) classification. We explored three families of approaches --- VLM-only baselines, tool-augmented pipelines, and classifier-based post-processing --- and describe the design rationale behind each.
+
+\subsection{Task Definition and Evaluation}
+\label{sec:formulation}
+
+Given a chart image $x$ from an SEC filing, the task is to predict a set of misleader labels $\hat{Y} \subseteq \mathcal{T}$, where $\mathcal{T}$ contains the 12 categories defined by Tonglet et al.~\cite{tonglet2025misviz}: \textit{truncated axis, misrepresentation, 3D distortion, dual axis, pie chart misuse, inconsistent tick intervals, inconsistent binning, discretized continuous variable, line chart misuse, inappropriate item order, inverted axis,} and \textit{inappropriate axis range}.
+
+We report both binary F1 (is the chart misleading?) and per-type F1 (PT-F1), which computes F1 for each of the 12 types independently and takes the macro-average. PT-F1 is our primary metric because it captures fine-grained detection ability that binary F1 misses entirely --- a model can achieve high binary F1 by simply flagging most charts while getting the specific type wrong. Figure~\ref{fig:overview} shows the three-phase experimental design.
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+    node distance=0.4cm,
+    phase/.style={rectangle, draw, rounded corners=3pt, minimum width=3.6cm, minimum height=1.8cm, align=center, font=\small},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+    note/.style={font=\scriptsize, text=gray, align=center},
+  ]
+    \node[phase, fill=blue!12] (p1) {\textbf{Phase 1: Baseline}\\{\scriptsize 2 models $\times$ 2 conditions}\\{\scriptsize Claude / Qwen}\\{\scriptsize vision / vision+text}};
+    \node[phase, fill=green!12, right=0.7cm of p1] (p2) {\textbf{Phase 2: Pipeline}\\{\scriptsize 8 architectures (V3--V8)}\\{\scriptsize OCR, DePlot, ViT}\\{\scriptsize as post-proc.\ vetoes}};
+    \node[phase, fill=purple!12, right=0.7cm of p2] (p3) {\textbf{Phase 3: Validation}\\{\scriptsize 10 SEC 10-K filings}\\{\scriptsize vs.\ comment letters}\\{\scriptsize ground truth}};
+
+    \draw[arrow] (p1) -- (p2);
+    \draw[arrow] (p2) -- (p3);
+
+    \node[note, below=0.3cm of p1] {271 Misviz charts};
+    \node[note, below=0.3cm of p2] {271 Misviz charts};
+    \node[note, below=0.3cm of p3] {Real SEC filings};
+  \end{tikzpicture}
+  \caption{Three-phase experimental design. Phase~1 establishes VLM baselines across models and input conditions. Phase~2 iterates on pipeline architecture with tool augmentation strategies. Phase~3 validates the best pipeline on real SEC filings against known regulatory findings.}
+  \label{fig:overview}
+\end{figure}
+
+We evaluate on a 271-chart subset of the Misviz benchmark~\cite{tonglet2025misviz} (which contains 2,604 real-world charts total) with multi-label annotations across all 12 types. For the SEC case study, we collect charts from 10-K filings of 10 public companies via the EDGAR system.
+
+\subsection{VLM-Only Baselines}
+\label{sec:baseline}
+
+The simplest approach prompts a VLM with the chart image and a structured instruction listing all 12 misleader types with definitions. The model returns a JSON response indicating whether the chart is misleading and which types apply. We tested this setup with Claude Haiku~4.5, Qwen3-VL-8B, and Claude Sonnet~4.6, under both vision-only and vision-plus-text conditions (where ground-truth text context such as axis labels and data values is also provided).
+
+We originally expected textual grounding to improve detection, following the common multi-modal fusion intuition. In practice, text context made no statistically significant difference for Claude and actually degraded Qwen's recall substantially. This negative result shaped all subsequent designs: we dropped text injection from the pipeline and relied on vision-only input throughout.
+
+\subsection{Tool-Augmented Approaches}
+\label{sec:tools}
+
+Motivated by the success of tool-augmented LLMs in text reasoning~\cite{yao2023react,schick2023toolformer}, we explored two strategies for integrating external tools into the detection pipeline.
+
+In the first approach (C5), we ran RapidOCR on the chart image to extract text and numeric values, then applied a deterministic rule engine to check for structural violations (e.g., non-zero y-axis start, uneven tick spacing). The VLM received both the original image and the OCR+rule outputs as additional context in a second call.
+
+In the second approach (C6), the VLM itself served as the extraction tool: a first call asked the model to output structured data (axis values, chart type), which then fed the same rule engine. A second VLM call received the extraction and rule results alongside the image.
+
+Both approaches underperformed the VLM-only baseline. Post-hoc analysis revealed two failure modes. First, OCR errors --- misread digits, skipped labels --- introduced false evidence that the VLM treated as ground truth, leading it to incorrect conclusions. Second, the additional textual context in the prompt appeared to dilute the model's visual attention, degrading detection of spatially-grounded misleader types like 3D distortion and misrepresentation. These observations led us to a different design principle: rather than injecting tool outputs \textit{into} the prompt, we should use them \textit{after} the VLM has made its prediction, as a post-processing filter.
+
+\subsection{Pipeline Variants}
+\label{sec:pipeline}
+
+Building on the post-processing insight, we developed a series of pipeline variants (V3 through V8), each designed to test a specific hypothesis about how to improve per-type detection.
+
+\paragraph{Prompt disambiguation and rule-based veto (V3--V4).}
+V3 attempted to inject OCR-derived rule verdicts directly into the VLM prompt, using a three-tier system (Flagged / Clean / Inconclusive). Performance did not improve, confirming that rule injection --- even with structured formatting --- harms visual reasoning.
+
+V4 took the opposite approach. Instead of injecting rules into the prompt, we made two changes: (a) added 2--3 contrastive disambiguation examples for the types most prone to false positives (3D, misrepresentation), and (b) applied OCR rule results as a post-hoc \textit{veto} --- when the rules confidently indicate that a type is \textit{not} present (the ``Clean'' verdict, which has near-perfect precision), we override the VLM's positive prediction. This combination produced our first meaningful improvement over baseline and became the foundation for all subsequent variants.
+
+\paragraph{DePlot integration (V5).}
+We integrated DePlot~\cite{liu2023deplot} to convert charts into data tables, using the extracted values to run quantitative axis-range checks. The DePlot extraction introduced too many errors that propagated as false positives, reinforcing our finding that tool outputs work as vetoes but not as inputs.
+
+\paragraph{Multi-call re-asking (V6--V7).}
+The single-call prompt asks about all 12 types simultaneously, which we hypothesized might dilute the model's attention for rare types (tick intervals, binning, axis range). V6 added a second VLM call for charts with few findings, asking about the missing ``blind-spot'' types in a batch. V7 went further: for charts the first call reported as clean, it asked about each blind-spot type individually in separate calls.
+
+V7 revealed an important result: VLMs \textit{can} detect the blind-spot types when asked one at a time, suggesting the limitation is attention allocation rather than capability. However, the per-type calls ($\sim$7 per chart) also introduced more false positives, and the overall PT-F1 was lower than V4.
+
+\paragraph{Self-consistency voting (V8).}
+We applied self-consistency~\cite{wang2023selfconsistency} to V7, running the sequential pipeline three times with temperature sampling and majority-voting the predictions. Performance degraded further. This result is consistent with the hypothesis that VLM errors on chart misleaders are systematic --- the model consistently misinterprets certain visual patterns --- rather than stochastic, which means sampling-based correction is ineffective.
+
+\subsection{ViT-Based Selective Veto}
+\label{sec:vit}
+
+The V7 experiments showed that VLMs have the underlying capability to detect blind-spot types but at a cost of excessive API calls and false positives. We sought a lightweight alternative that could filter false positives without additional VLM calls.
+
+We fine-tuned a ViT-B/16~\cite{dosovitskiy2021vit} (86M parameters) on the Misviz synthetic dataset (82K images with ground-truth multi-labels) as a 12-class multi-label classifier. Training used a two-phase schedule: one epoch with a frozen backbone (head-only, lr=$10^{-3}$), followed by two epochs of full fine-tuning (lr=$10^{-4}$), with BCE loss and class-frequency-based positive weighting.
+
+Rather than using the ViT as a standalone detector (its recall is too low for that), we use it as a \textit{selective veto} on VLM predictions. Concretely, for each type that the VLM flags, if that type is in the veto-eligible set and the ViT's predicted probability falls below a threshold of 0.20, the prediction is removed from the final output.
+
+The veto is applied selectively: only on types where the ViT achieves high precision on the validation set (tick intervals, binning, axis range, item order, truncated axis). Types where the ViT is unreliable --- 3D distortion (26\% precision) and dual axis (45\%) --- are excluded to avoid discarding true positives. The threshold was chosen via grid search on the validation split.
+
+\subsection{Final Pipeline}
+\label{sec:best}
+
+Our best-performing pipeline combines V4 with the ViT selective veto in four steps:
+
+\begin{enumerate}[nosep]
+  \item A single VLM call (Claude Haiku 4.5) with the 12-type prompt and disambiguation examples, producing initial type predictions.
+  \item Rule-based deduplication: if \textit{misrepresentation} co-occurs with \textit{3D} or \textit{truncated axis}, we remove it, since the structural type already explains the visual distortion.
+  \item An optional targeted VLM re-ask: if \textit{misrepresentation} survives step~2, a focused call asks the model to identify the specific element with a size mismatch. Unverified claims are dropped.
+  \item ViT selective veto on the five eligible types as described in \S\ref{sec:vit}.
+\end{enumerate}
+
+This architecture requires only one VLM call in the common case (plus one conditional re-ask), keeping latency and API cost low while achieving meaningful improvement in per-type detection accuracy.
+
+\begin{figure}[t]
+  \centering
+  \resizebox{\textwidth}{!}{%
+  \begin{tikzpicture}[
+    node distance=0.5cm,
+    box/.style={rectangle, draw, rounded corners=2pt, minimum height=0.85cm, minimum width=1.7cm, align=center, font=\footnotesize},
+    arrow/.style={-{Stealth[length=2mm]}, thick},
+  ]
+    \node[box, fill=blue!12] (input) {Chart\\Image};
+    \node[box, fill=blue!25, right=of input] (vlm) {VLM Call\\{\scriptsize Haiku 4.5}};
+    \node[box, fill=orange!20, right=of vlm] (dedup) {Rule\\Dedup};
+    \node[box, fill=orange!20, right=of dedup] (reask) {Misrep\\Re-ask};
+    \node[box, fill=green!20, right=of reask] (vit) {ViT Selective\\Veto};
+    \node[box, fill=gray!15, right=of vit] (out) {Final\\Prediction};
+
+    \draw[arrow] (input) -- (vlm);
+    \draw[arrow] (vlm) -- (dedup);
+    \draw[arrow] (dedup) -- (reask);
+    \draw[arrow] (reask) -- (vit);
+    \draw[arrow] (vit) -- (out);
+
+    \node[above=0.5cm of vlm, font=\scriptsize\itshape, text=red!70!black] (rej) {Tool injection into prompt};
+    \draw[dashed, red!60, -{Stealth[length=1.5mm]}] (rej) -- (vlm);
+    \node[right=0.1cm of rej, font=\scriptsize\bfseries, text=red!70!black] {\texttimes};
+
+    \node[below=0.3cm of dedup, font=\scriptsize\itshape, text=gray] {Post-processing stages};
+  \end{tikzpicture}%
+  }
+  \caption{Final pipeline architecture. A single VLM call produces initial predictions, followed by three post-processing stages: rule-based deduplication, targeted re-ask for ambiguous types, and ViT classifier veto on five high-precision types. Injecting tool outputs directly into the VLM prompt was found to degrade performance and is not used.}
+  \label{fig:pipeline}
+\end{figure}
+
+\subsection{Extension to SEC Filings}
+\label{sec:sec}
+
+To test real-world applicability, we extended the pipeline to process SEC 10-K filings end-to-end. An automated data collection module downloads filings from SEC EDGAR by ticker symbol, parses the HTML for chart images (filtering out logos, headshots, and decorative images via a VLM classification step), and extracts financial tables for textual analysis.
+
+Beyond chart-level visual misleaders, we added a second analysis dimension for Non-GAAP compliance: the VLM examines extracted financial tables for Regulation~G violations (missing GAAP reconciliation) and Item~10(e) violations (Non-GAAP measures presented more prominently than comparable GAAP figures). We validated the system's findings against actual SEC comment letters issued to the same companies, providing a form of external ground truth for this otherwise unlabeled domain.
+
+\subsection{Evolution from Original Proposal}
+\label{sec:pivots}
+
+Several components of our original proposal did not survive contact with experimental evidence. We initially planned a multi-agent architecture with specialized OCR, rule, and VLM agents sharing a memory module; the V3 and V5 results led us to replace this with a simpler single-call pipeline with post-processing. We also planned to use DePlot as a universal data extraction layer, but V5 showed its error rate was too high for reliable rule application. Finally, we expected self-consistency voting to improve robustness, but V8 demonstrated that chart misleader errors are systematic rather than random, making the ViT veto a more appropriate correction mechanism.

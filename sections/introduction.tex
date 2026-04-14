@@ -1,0 +1,62 @@
+\section{Introduction}
+
+Misleading data visualizations are a recurring issue in financial
+reporting. The U.S. Securities and Exchange Commission (SEC) reviews
+thousands of 10-K and 10-Q filings annually, where charts are frequently
+used to present financial performance. While these visualizations are
+intended to improve readability, certain design choices such as
+truncated axes, uneven scaling, or three-dimensional effects can
+unintentionally, or sometimes intentionally, distort how information is
+perceived. Prior work shows that even simple changes like truncating the
+y-axis can significantly exaggerate differences and affect user judgment
+\cite{pandey2015deceptive}. To reduce these risks, regulations such as
+Regulation~G and Item~10(e) of Regulation~S-K provide guidance on how
+non-GAAP financial measures should be presented. However, in practice,
+most enforcement focuses on textual disclosures rather than visual
+representations, and no automated tools currently exist for chart-level
+compliance checking. As a result, identifying misleading charts still
+relies heavily on manual review, which is not only time-consuming but
+also difficult to scale across thousands of filings.
+
+Recent progress in Vision-Language Models (VLMs) has made it possible to
+analyze both visual and textual information jointly. Models evaluated in
+ChartQA \cite{masry2022chartqa} and approaches like DePlot
+\cite{liu2023deplot} show promising results in extracting and reasoning
+over chart data. The Misviz benchmark \cite{tonglet2025misviz} provides
+the first dataset specifically designed for misleading visualization
+detection, covering 12 distinct misleader types. However, most existing
+evaluations focus only on binary classification, asking whether a chart
+is misleading or not, and per-type detection ability remains largely
+unexplored. A separate line of work on tool-augmented language models,
+including Toolformer \cite{schick2023toolformer} and ReAct
+\cite{yao2023react}, demonstrates that combining language models with
+external tools can improve reasoning performance in text-based tasks.
+Whether this benefit extends to visual reasoning tasks such as chart
+analysis, where additional inputs like OCR outputs may introduce noise
+rather than helpful signals, remains an open question.
+
+In this project, we study how well VLMs can detect misleading financial
+charts and how different system designs affect their performance. We
+focus on three research questions: (RQ1) how accurately VLMs can
+identify each of the 12 misleader types defined by \citet{tonglet2025misviz},
+and whether model scale matters; (RQ2) whether tool augmentation
+improves detection performance; and (RQ3) whether findings from
+benchmark datasets generalize to real-world SEC filings.
+
+This paper makes four contributions. First, we present a systematic
+comparison of eight pipeline variants across three VLMs on the Misviz
+benchmark \cite{tonglet2025misviz}, evaluating both binary and per-type
+detection performance across all 12 misleader categories. Second, we
+find that injecting tool outputs such as OCR results and rule engine
+verdicts directly into VLM prompts consistently degrades performance,
+while using the same tools as post-processing vetoes improves results.
+This finding challenges common assumptions from tool-augmented LLM work
+\cite{yao2023react, schick2023toolformer} and suggests that visual
+reasoning tasks require a different integration strategy. Third, we
+propose a ViT-based selective veto mechanism \cite{dosovitskiy2021vit}
+trained on the Misviz synthetic dataset, which filters false positives
+on five high-precision misleader types without additional VLM calls.
+Fourth, we validate our best pipeline on real SEC 10-K filings across
+ten public companies, comparing findings against actual SEC comment
+letters as external ground truth.
+
