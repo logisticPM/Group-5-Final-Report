@@ -1,0 +1,32 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented FinChartAudit, a system for detecting misleading financial charts in SEC 10-K filings using Vision-Language Models. Through a systematic evaluation of eight pipeline architectures on the Misviz benchmark (271 charts, 12 misleader types) and a real-world validation against SEC comment letters (96 charts, 10 companies), we arrived at three concrete findings.
+
+First, VLMs can detect visually-salient misleader types (dual axis, 3D distortion, pie chart misuse) with reasonable accuracy but fail systematically on quantitatively-grounded types (inconsistent tick intervals, discretized continuous variable, inconsistent binning). The gap between binary F1 (83.0\%) and per-type F1 (39.3\%) reveals that binary evaluation substantially overstates practical utility.
+
+Second, tool augmentation must be applied as post-processing, not as prompt injection. Injecting OCR and rule engine outputs directly into VLM prompts consistently degraded performance across all variants tested (V3, V5). Applying the same tools as post-hoc vetoes---keeping the VLM's visual reasoning clean---produced the first meaningful gains. This finding challenges the straightforward application of tool-augmented LLM techniques~\cite{yao2023react,schick2023toolformer} to visual reasoning tasks.
+
+Third, the best single-call pipeline---V4 with ViT-B/16 selective veto---achieves PT-F1~=~45.2\% and precision~=~50.0\%, a 5.9-point PT-F1 improvement over the VLM-only baseline at identical inference cost. The ViT veto reduces false positives from 157 to 82 on five high-precision types without requiring additional API calls.
+
+On real SEC filings, the pipeline correctly identifies companies with known visual presentation violations (STZ, UPS, VERI) and qualitatively aligns with the specific regulatory concerns in SEC comment letters. Companies whose violations were textual rather than visual (CHPT) are appropriately missed, indicating the system is detecting genuine visual misleaders rather than spuriously correlating with filing characteristics.
+
+\section{Future Work}
+\label{sec:future}
+
+Several directions remain open.
+
+\paragraph{Closing the blind-spot gap.}
+The three types with near-zero F1---inconsistent tick intervals, discretized continuous variable, and inappropriate item order---all require reasoning about data ordering or numeric spacing that VLMs cannot perform reliably from image alone. Integrating a dedicated chart-to-table extraction model (with error-correction) specifically for these types, used as a post-processing veto rather than a prompt input, is the most promising direction.
+
+\paragraph{Grounded misrepresentation detection.}
+Misrepresentation (F1~=~41.7\% after improvement) remains the largest source of false positives (39 residual FPs). Pixel-level bar measurement---comparing rendered bar heights against extracted numeric labels---could replace the VLM's holistic judgment with a verifiable geometric check.
+
+\paragraph{Chart-level vs.\ filing-level evaluation.}
+Our SEC validation uses company-level comment letters as ground truth, which is a coarse signal. Constructing a chart-level annotated dataset from SEC filings---even for a small set of companies---would enable more precise evaluation and reveal whether the domain gap is primarily distributional or structural.
+
+\paragraph{Non-GAAP compliance expansion.}
+The current Non-GAAP analysis covers Regulation~G and Item~10(e) violations in financial tables. Extending this to detect visual Non-GAAP misleaders---such as charts that prominently feature non-GAAP metrics without clearly labeling them as such---would address a gap that SEC enforcement has increasingly focused on.
+
+\paragraph{Broader applicability.}
+While developed for SEC filings, the pipeline generalizes to any domain where charts appear alongside regulatory or factual ground truth (e.g., clinical trial publications, government statistical reports). Evaluating transfer to these domains is a natural extension.
